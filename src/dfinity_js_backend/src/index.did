@@ -1,0 +1,6 @@
+service: () -> {
+    confirmDelivery: (text) -> (variant {Ok:text; Err:text});
+    createOrder: (text, nat, principal) -> (variant {Ok:text; Err:text});
+    getOrders: () -> (vec record {id:text; status:text; seller:principal; buyer:principal; price:nat; escrow:nat; product:text}) query;
+    updateOrderStatus: (text, text) -> (variant {Ok:text; Err:text});
+}

@@ -1,69 +1,77 @@
-import { StableBTreeMap, ic, Principal, Result } from 'azle';
+import { StableBTreeMap, ic, Principal, Result, Record, text, nat, Canister, query, update, Vec } from 'azle';
+import { v4 as uuidv4 } from 'uuid';
 
-enum OrderStatus {
-  Pending,
-  Shipped,
-  Delivered,
-  Cancelled
-}
-
-class Order {
-    id: string = '';
-    buyer: Principal = ic.caller();
-    seller: Principal = ic.caller();
-    product: string = '';
-    status: OrderStatus = OrderStatus.Pending;
-    price: bigint = BigInt(0);
-    escrow: bigint = BigInt(0);
-}
+const Order = Record({
+    id: text,
+    buyer: Principal,
+    seller: Principal,
+    product: text,
+    status: text,
+    price: nat,
+    escrow: nat
+});
 
 
-const orders = StableBTreeMap<string, Order>(0);
+const orders = StableBTreeMap(0, text, Order);
 
-export function createOrder(id: string, product: string, price: bigint, seller: Principal): Result<string, string> {
-  const buyer = ic.caller();
-  const order: Order = { id, buyer, seller, product, status: OrderStatus.Pending, price, escrow: price };
-  orders.insert(id, order);
-  return Result.Ok("Order created");
-}
+export default Canister({
+  createOrder: update([text, nat, Principal],Result(text, text), (product, price, seller) =>  {
+   const buyer = ic.caller();
+   const order = { id: uuidv4(), buyer, seller, product, status: "PENDING", price, escrow: price };
+   orders.insert(order.id, order);
+   return Result.Ok("Order created");
+ }),
+ 
+  updateOrderStatus: update([text, text],Result(text,text), (id, status) => {
+   const orderOpt = orders.get(id);
+   const order = orderOpt?.Some;
+   
+   if (order && order.status !== "ESCROW_RELEASED") {
+     order.status = status;
+     orders.insert(id, order);
+     return Result.Ok("Order status updated");
+   }
+   
+   return Result.Err("Order not found");
+ }),
+ 
+ 
+  confirmDelivery: update([text], Result(text,text), (id) => {
+     const orderOpt = orders.get(id);
+     const order = orderOpt?.Some;
+   
+     if (order) {
+       if (order.status.toString() === "DELIVERED") {
+         // Release escrow to seller
+         // Placeholder for actual token transfer logic
+         order.escrow = BigInt(0);
+         order.status = "ESCROW_RELEASED";
+         orders.insert(id, order);
+         return Result.Ok("Delivery confirmed, escrow released");
+       }
+       return Result.Err("Order not delivered yet");
+     }
+     
+     return Result.Err("Order not found");
+   }),
+   
+    getOrders: query([],Vec(Order), () => {
+     return orders.values();
+   }),
 
-export function updateOrderStatus(id: string, status: OrderStatus): Result<string, string> {
-  const orderOpt = orders.get(id);
-  const order = orderOpt?.Some;
+})
   
-  if (order) {
-    order.status = status;
-    orders.insert(id, order);
-    return Result.Ok("Order status updated");
-  }
-  
-  return Result.Err("Order not found");
-}
 
+  // a workaround to make uuid package work with Azle
+globalThis.crypto = {
+  // @ts-ignore
+  getRandomValues: () => {
+    let array = new Uint8Array(32);
 
-export function confirmDelivery(id: string): Result<string, string> {
-    const orderOpt = orders.get(id);
-    const order = orderOpt?.Some;
-  
-    if (order) {
-      if (order.status === OrderStatus.Delivered) {
-        // Release escrow to seller
-        // Placeholder for actual token transfer logic
-        order.escrow = BigInt(0);
-        orders.insert(id, order);
-        return Result.Ok("Delivery confirmed, escrow released");
-      }
-      return Result.Err("Order not delivered yet");
+    for (let i = 0; i < array.length; i++) {
+      array[i] = Math.floor(Math.random() * 256);
     }
-    
-    return Result.Err("Order not found");
-  }
-  
-  export function getOrders(): Order[] {
-    return orders.values();
-  }
-  
-  export function CanisterMethods(): Order[] {
-    return orders.values();
-  }
-  
+
+    return array;
+  },
+};
