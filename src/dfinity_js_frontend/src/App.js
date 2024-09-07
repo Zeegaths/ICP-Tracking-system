@@ -1,33 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { Actor, HttpAgent } from '@dfinity/agent';
-import { idlFactory as orderIdlFactory } from '../../declarations/dfinity_js_backend';
-
-const agent = new HttpAgent();
-const orderActor = Actor.createActor(orderIdlFactory, { agent, canisterId: process.env.ORDER_CANISTER_ID });
-
+import React, { useState, useEffect, useCallback } from 'react';
+import Cover from './components/utils/Cover';
+import { getOrders, createOrder } from './utils/order';
+import { login } from './utils/auth';
+import AddOrder from './components/order/AddOrder';
+import { Container } from 'react-bootstrap';
 const App = () => {
+  const isAuthenticated = window.auth.isAuthenticated;
+  const principal = window.auth.principal;
+  const title = "Order"
+
   const [orders, setOrders] = useState([]);
 
-  const fetchOrders = async () => {
-    const ordersList = await orderActor.getOrders();
-    setOrders(ordersList);
+  const fetchOrders = useCallback(async () => {
+    try {
+      setOrders(await getOrders());
+    } catch (error) {
+      console.log({ error });
+    }
+  });
+  const save = async (product, price) => {
+    try {
+      let seller = principal;
+      price = parseInt(price, 10);
+      await createOrder(product,price, seller);
+      fetchOrders();
+    } catch (error) {
+      console.log({ error });
+    }
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    if(isAuthenticated){
+      fetchOrders()
+    }
+  }, [isAuthenticated]);
 
   return (
-    <div>
-      <h1>Order Tracking System</h1>
-      <ul>
-        {orders.map(order => (
-          <li key={order.id}>
-            {order.product} - Status: {order.status}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <>
+      {isAuthenticated ? (
+        <Container flued="md">
+        <div className="d-flex justify-content-between align-items-center mb-4">
+        <h1>Order Tracking System</h1>
+        <AddOrder save={save} />
+        </div>
+        <ul>
+          {orders.map(order => (
+            <li key={order.id}>
+              {order.product} - Status: {order.status}
+            </li>
+          ))}
+        </ul>
+        </Container>) : <Cover title={title} login={login} />}
+    </>
   );
 };
 
